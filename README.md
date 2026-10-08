@@ -1,119 +1,29 @@
 # Item Checker Demo | Akeneo PIM Product Photo Verification
 
-An AI-powered quality control and audit platform designed for e-commerce catalog operations (chandeliers, pendant lights, furniture, and home decor). It cross-references lifestyle/room model photos against product side photos to automatically detect mismatches, wrong variants, or invalid side angles.
+An AI-powered quality control and audit platform for checking whether gallery photos show the same physical product as the hero photo.
 
----
+## Final visual-only matching flow
 
-## 🚀 Key Features
+The active matching design is: **duplicate check → proportion-safe preprocessing → DINOv2 visual similarity → Qwen image-to-image verification → valid / invalid / review / error**.
 
-- **Interactive Web PIM Dashboard (`index.html`)**
-  - Rich Akeneo-inspired design with dark/light themes.
-  - Status filters: *All*, *Valid*, *Invalid / Mismatch*, and *Needs Review*.
-  - Side-by-side visual comparison with synchronized zoom inspection.
-  - Instant search across product handles, titles, SKUs, and categories.
-  - Operator manual review modal with human-override feedback.
-  - One-click Batch ZIP export of categorized product imagery.
+The matcher compares only visible product appearance: silhouette, proportions, geometry, cords/rods, arms, tiers, heads, finish, material and distinctive physical details. It must not use OCR, printed model codes, dimensions, titles, filenames, URLs, catalog metadata or background similarity as match evidence.
 
-- **Qwen Vision AI Verification Engine (`qwen_server.py`)**
-  - Real-time Server-Sent Events (SSE) streaming verification powered by Qwen 3.8 Flash Vision (`dashscope`).
-  - Catalog specifications injection (dimensions, shape, tier count, finishes, materials).
-  - Strict confidence scoring policy (< 80% confidence flagged for manual review).
+The standalone production matcher is `visual_only_matcher.py`:
 
-- **Obsidian-Compatible Knowledge Base (`knowledge/`)**
-  - **Category Rules (`knowledge/rules/`)**: Rule rubrics for chandeliers, pendant lights, and general lighting.
-  - **Brand Profiles (`knowledge/brands/`)**: Manufacturer traits and packaging characteristics (e.g. Huanglilai).
-  - **Few-Shot Examples (`knowledge/few_shots/`)**: Documented mismatch patterns for visual prompt context.
-  - **Active Learning Overrides (`knowledge/feedback/`)**: Stores operator override decisions to refine AI prompts.
-  - **Audit Exports (`knowledge/audits/`)**: Generates structured Markdown audit reports.
-
-- **Offline Computer Vision Pipeline (`auto_checker.py`)**
-  - Background removal via `rembg`.
-  - Object segmentation via `FastSAM` (`FastSAM-s.pt`).
-  - Semantic feature embedding via `DINOv2`.
-  - Geometric keypoint & texture matching via `LightGlue` + `ALIKED`.
-
----
-
-## 📁 Repository Structure
-
-```text
-├── index.html                    # Web UI dashboard
-├── app.js                        # Client application logic & Obsidian KB integration
-├── style.css                     # UI styling (dark/light theme, modern PIM layout)
-├── data.js                       # Pre-compiled dataset bundle for offline demo
-├── preloaded_data.json           # Catalog items and image metadata
-├── qwen_server.py                # Local Python web server & Qwen Vision AI backend
-├── auto_checker.py               # Deep learning computer vision pipeline
-├── export_images.py              # CLI batch image downloader
-├── InvalidSideImages.csv         # Input CSV dataset
-├── InvalidSideImages_Verified.csv# AI verified results CSV
-├── ai_results.json               # Cached AI verification outputs
-├── FastSAM-s.pt                  # FastSAM lightweight model weights
-├── cache_images/                 # Cached sample catalog images
-├── knowledge/                    # Obsidian Knowledge Base
-│   ├── rules/                    # Lighting verification rubrics
-│   ├── brands/                   # Vendor & brand specifications
-│   ├── few_shots/                # Historical mismatch examples
-│   ├── feedback/                 # Human operator feedback & overrides
-│   └── audits/                   # Generated markdown audit reports
-├── .env.example                  # Environment variable configuration template
-└── .gitignore                    # Git ignore file
-```
-
----
-
-## ⚡ Quick Start
-
-### Option 1: Standalone Web Interface (No Server Required)
-Simply open `index.html` in any modern web browser:
 ```bash
-# On Windows
-start index.html
+pip install pillow ImageHash
+python visual_only_matcher.py --reference hero.jpg --candidates side1.jpg side2.jpg
 ```
-The application will load the pre-computed catalog dataset (`data.js` / `preloaded_data.json`) and display the full verification interface.
 
----
+For URL-to-URL Qwen verification, set `DASHSCOPE_API_KEY`; the API model defaults to `qwen3.8-flash` and can be changed with `QWEN_MODEL`. DINOv2 is optional and loads when PyTorch/model dependencies are available. Borderline results stay `review`; API failures stay `error`, never `invalid`.
 
-### Option 2: Live AI Server (Qwen Vision Backend)
+The existing dashboard and `qwen_server.py` remain backward-compatible while this matcher is being validated against the next test run. After validation, wire `visual_only_matcher.compare()` into the dashboard stream endpoint and replace the legacy attribute/spec decision path.
 
-1. **Install Python dependencies:**
-   ```bash
-   pip install openai
-   ```
-   *(For running the offline computer vision pipeline in `auto_checker.py`, also install `torch torchvision opencv-python pillow rembg ultralytics`)*
+## Existing components
 
-2. **Configure Environment Variables:**
-   Copy `.env.example` to `.env` and set your Alibaba Cloud DashScope API key:
-   ```bash
-   cp .env.example .env
-   ```
-   Edit `.env`:
-   ```ini
-   DASHSCOPE_API_KEY=your_dashscope_api_key_here
-   ```
-
-3. **Start the local server:**
-   ```bash
-   python qwen_server.py
-   ```
-
-4. **Open in browser:**
-   Navigate to [http://localhost:8089](http://localhost:8089)
-
----
-
-## 🛠️ CLI Utilities
-
-- **Export and Download Images:**
-  ```bash
-  python export_images.py
-  ```
-- **Run Local CV Matching Pipeline:**
-  ```bash
-  python auto_checker.py
-  ```
-
----
-
-## 📄 License
-MIT License.
+- `index.html`, `app.js`, `style.css`: dashboard
+- `qwen_server.py`: current streaming verification server
+- `auto_checker.py`: offline CV evidence pipeline
+- `visual_only_matcher.py`: new visual-only matcher
+- `knowledge/`: rules, feedback overrides and audit exports
+- `InvalidSideImages.csv`: input catalog data
