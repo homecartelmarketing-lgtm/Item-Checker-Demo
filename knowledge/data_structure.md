@@ -1,16 +1,13 @@
-# Product Catalog Validation Knowledge Base (Obsidian Vault)
+# Knowledge folder
 
-This vault houses the quality control rules, category rubrics, supplier model patterns, and verified few-shot contrast examples used by the AI Catalog Item Checker.
+Text in `rules/` is sent to Qwen on every check (general rules + the product's category rules).
+Keep it short, visual-only, and consistent with `VISUAL_MATCHING_SPEC.md`.
 
-## Vault Directory Structure
+- `rules/general_lighting.md`: applies to every product
+- `rules/chandeliers.md`: added when the product type/title says chandelier
+- `rules/pendant_lights.md`: added when it says pendant
+- `few_shots/pairs.json`: optional real image-pair examples (copy `pairs.example.json`). A product never sees its own examples.
+- `feedback/overrides.json`: operator ✓ / ✗ decisions from the UI. They always win.
+- `brands/`: reference notes for humans only. Not sent to Qwen (model codes are text, and text is not match evidence).
 
-- [[rules/chandeliers|rules/chandeliers.md]]: Rules for chandeliers (shape topology, suspension cords, tier structures).
-- [[rules/pendant_lights|rules/pendant_lights.md]]: Rules for pendant lights (single drop vs multi-head canopy).
-- [[rules/general_lighting|rules/general_lighting.md]]: General e-commerce image validation guidelines (room scenes, close-ups, dimension sheets).
-- [[brands/huanglilai|brands/huanglilai.md]]: Brand profiles and model numbering conventions (e.g., Huanglilai DD249863 series).
-- [[few_shots/chandelier_mismatches|few_shots/chandelier_mismatches.md]]: Verified few-shot contrast cases (e.g., Rectangular 100x40cm vs Circular 60cm).
-- `feedback/overrides.json`: Active learning log of human operator manual overrides.
-- `audits/`: Generated inspection audit reports.
-
----
-*Created for automated PIM Quality Control with Qwen 3.8 Flash Vision.*
+The task prompts themselves live in `../prompts/`.
