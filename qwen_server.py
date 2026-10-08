@@ -77,12 +77,15 @@ def result_for(handle, hero_url, side, overrides):
         out = compare(hero_url, url)
         verdict = out.get("verdict", "review")
         confidence = float(out.get("score") or 0)
+        if 0.0 < confidence <= 1.0:
+            confidence *= 100.0
         reason = (out.get("qwen") or {}).get("reason") or "Visual comparison completed."
         if verdict == "error":
             reason = (out.get("qwen") or {}).get("reason") or "Visual verification failed."
+        status = "match" if verdict == "valid" else ("review" if verdict == "review" else "mismatch")
         return {
             "url": url, "position": position, "score": round(confidence, 1),
-            "status": "match" if verdict == "valid" else "mismatch",
+            "status": status,
             "is_valid": verdict == "valid", "verdict": verdict,
             "needs_review": verdict in ("review", "error"), "reason": reason,
             "visual_evidence": {

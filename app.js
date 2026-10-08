@@ -149,7 +149,8 @@
             photo.ai_dino = aiMatch.dinov2_score;
             photo.ai_lightglue = aiMatch.lightglue_matches;
             photo.ai_box = aiMatch.box;
-            photo.isValid = (aiMatch.status === 'match' && !aiMatch.critic_vetoed && (aiMatch.score === undefined || aiMatch.score >= 85));
+            photo.verdict = aiMatch.verdict;
+            photo.isValid = Boolean(aiMatch.is_valid !== undefined ? aiMatch.is_valid : (aiMatch.status === 'match' && !aiMatch.critic_vetoed));
             if (photo.isValid) matchedCount++;
             else mismatchCount++;
           }
@@ -555,11 +556,12 @@
     items.forEach((photo, idx) => {
       const isSelected = selectedSideIndices.has(idx);
       const isFlaggedInvalid = !photo.isValid;
-      const isAiMatch = photo.ai_score !== undefined && photo.ai_status === 'match';
-      const isAiMismatch = photo.ai_score !== undefined && photo.ai_status === 'mismatch';
+      const isAiMatch = photo.ai_score !== undefined && (photo.ai_status === 'match' || photo.verdict === 'valid');
+      const isAiMismatch = photo.ai_score !== undefined && (photo.ai_status === 'mismatch' || photo.verdict === 'invalid');
+      const isAiReview = photo.ai_score !== undefined && (photo.ai_status === 'review' || photo.verdict === 'review');
 
       const card = document.createElement('div');
-      card.className = `ak-side-card ${isSelected ? 'selected' : ''} ${isFlaggedInvalid ? 'invalid-flagged' : ''} ${isAiMatch ? 'ai-match' : ''} ${isAiMismatch ? 'ai-mismatch' : ''}`;
+      card.className = `ak-side-card ${isSelected ? 'selected' : ''} ${isFlaggedInvalid && !isAiReview ? 'invalid-flagged' : ''} ${isAiMatch ? 'ai-match' : ''} ${isAiMismatch ? 'ai-mismatch' : ''} ${isAiReview ? 'ai-review' : ''}`;
       
       const posLabel = photo.position && photo.position !== 'Unpositioned' ? `Pos #${photo.position}` : `Shot #${idx + 2}`;
 
@@ -569,17 +571,24 @@
       if (photo.ai_score !== undefined) {
         if (photo.critic_vetoed) {
           aiBadgeHtml = `<span class="ak-ai-badge mismatch" style="background: #FFE4E6; color: #BE123C; border-color: #FDA4AF;" title="${escapeHtml(photo.ai_reason || '')}"><i class="fa-solid fa-gavel"></i> CRITIC VETO</span>`;
-        } else if (photo.ai_status === 'match') {
+        } else if (photo.ai_status === 'match' || photo.verdict === 'valid') {
           aiBadgeHtml = `<span class="ak-ai-badge match" title="${escapeHtml(photo.ai_reason || '')}"><i class="fa-solid fa-circle-check"></i> ${photo.ai_score}% MATCH</span>`;
+        } else if (photo.ai_status === 'review' || photo.verdict === 'review') {
+          aiBadgeHtml = `<span class="ak-ai-badge review" style="background: #FEF3C7; color: #B45309; border: 1px solid #FCD34D;" title="${escapeHtml(photo.ai_reason || '')}"><i class="fa-solid fa-eye"></i> NEEDS REVIEW (${photo.ai_score}%)</span>`;
         } else {
           aiBadgeHtml = `<span class="ak-ai-badge mismatch" title="${escapeHtml(photo.ai_reason || '')}"><i class="fa-solid fa-triangle-exclamation"></i> MISMATCH (${photo.ai_score}%)</span>`;
         }
 
         let reasonHtml = '';
         if (photo.ai_reason) {
+          const isMatch = (photo.ai_status === 'match' || photo.verdict === 'valid');
+          const isReview = (photo.ai_status === 'review' || photo.verdict === 'review');
+          const reasonClass = isMatch ? 'match' : (isReview ? 'review' : 'mismatch');
+          const reasonIcon = isMatch ? 'fa-solid fa-circle-check' : (isReview ? 'fa-solid fa-eye' : 'fa-solid fa-triangle-exclamation');
+          const reasonStyle = isReview ? 'style="background: #FFFBEB; border-color: #FCD34D; color: #92400E;"' : '';
           reasonHtml = `
-            <div class="ak-card-ai-reason ${photo.ai_status === 'match' ? 'match' : 'mismatch'}">
-              <i class="${photo.ai_status === 'match' ? 'fa-solid fa-circle-check' : 'fa-solid fa-triangle-exclamation'}"></i>
+            <div class="ak-card-ai-reason ${reasonClass}" ${reasonStyle}>
+              <i class="${reasonIcon}"></i>
               <span>${escapeHtml(photo.ai_reason)}</span>
             </div>
           `;
@@ -626,10 +635,10 @@
         ${aiMetricsHtml}
 
         <div class="ak-card-footer">
-          <button class="ak-validation-toggle-btn ${photo.isValid ? 'is-valid' : 'is-invalid'}" data-index="${idx}" title="Click to toggle validity status">
+          <button class="ak-validation-toggle-btn ${photo.isValid ? 'is-valid' : (photo.verdict === 'review' ? 'is-review' : 'is-invalid')}" data-index="${idx}" title="Click to toggle validity status">
             ${photo.isValid 
               ? `<i class="fa-solid fa-circle-check"></i> Valid Side Photo` 
-              : `<i class="fa-solid fa-triangle-exclamation"></i> Invalid Side Image`}
+              : (photo.verdict === 'review' ? `<i class="fa-solid fa-eye"></i> Needs Review` : `<i class="fa-solid fa-triangle-exclamation"></i> Invalid Side Image`)}
           </button>
 
           <div class="ak-card-mini-actions">
@@ -949,14 +958,15 @@
     });
 
     // Single Product AI Check (Qwen 3.8 Flash Vision)
-    if (elements.runAiAutoCheckBtn) {
-      elements.runAiAutoCheckBtn.addEventListener('click', () => {
+    document.addEventListener('click', (e) => {
+      const btn = e.target && e.target.closest('#runAiAutoCheckBtn');
+      if (btn) {
         const prod = products[currentProductIndex];
         if (prod) {
           startAiStreamVerification(prod.handle);
         }
-      });
-    }
+      }
+    });
 
     // Batch Catalog AI Check (Qwen 3.8 Flash Vision)
     if (elements.batchAiCheckAllBtn) {
@@ -1388,6 +1398,7 @@
             photo.ai_status = result.status;
             photo.ai_reason = result.reason;
             photo.isValid = result.is_valid;
+            photo.verdict = result.verdict;
           }
         }
 
@@ -1399,7 +1410,7 @@
         renderSidebar();
 
         const pct = Math.max(10, Math.min(95, Math.round((current / total) * 100)));
-        const statusLabel = result.status === 'match' ? 'MATCH ✓' : 'MISMATCH ⚠';
+        const statusLabel = result.status === 'match' ? 'MATCH ✓' : (result.verdict === 'review' ? 'REVIEW 👁' : 'MISMATCH ⚠');
         showToast(
           `Qwen: ${statusLabel}`,
           `[${current}/${total}] ${result.reason || ''}`,

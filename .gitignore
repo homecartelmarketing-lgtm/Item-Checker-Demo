@@ -1,25 +1,22 @@
-# Environments & Secrets
 .env
 .env.local
 *.env
 
-# Python Bytecode & Cache
 __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
 
-# OS specific files
+
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Logs & temp files
+
 *.log
 temp/
 tmp/
 
-# Item Checker runtime artifacts
 logs/
 attr_cache.json
 *.tmp

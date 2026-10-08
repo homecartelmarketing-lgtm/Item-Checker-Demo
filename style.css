@@ -881,6 +881,16 @@ body {
   background-color: #FEE2E2;
 }
 
+.ak-validation-toggle-btn.is-review {
+  background-color: #FEF3C7;
+  color: #B45309;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.ak-validation-toggle-btn.is-review:hover {
+  background-color: #FDE68A;
+}
+
 .ak-card-mini-actions {
   display: flex;
   align-items: center;
@@ -1321,6 +1331,12 @@ body {
   border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
+.ak-ai-badge.review {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #D97706;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
 .ak-side-card.ai-match {
   border-color: rgba(16, 185, 129, 0.7);
   background-color: rgba(16, 185, 129, 0.02);
@@ -1331,6 +1347,12 @@ body {
   border-color: rgba(239, 68, 68, 0.7);
   background-color: rgba(239, 68, 68, 0.04);
   box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.25), 0 4px 14px rgba(239, 68, 68, 0.12);
+}
+
+.ak-side-card.ai-review {
+  border-color: rgba(245, 158, 11, 0.7);
+  background-color: rgba(245, 158, 11, 0.03);
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25), 0 4px 14px rgba(245, 158, 11, 0.1);
 }
 
 .ak-card-ai-metrics {

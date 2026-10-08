@@ -31,6 +31,22 @@ except ImportError:
     imagehash = None
 
 
+def _load_env_file():
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if os.path.exists(env_path):
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        os.environ.setdefault(k.strip(), v.strip())
+        except Exception:
+            pass
+
+_load_env_file()
+
+
 def load_image(value: str) -> Image.Image:
     if value.startswith(("http://", "https://")):
         req = urllib.request.Request(value, headers={"User-Agent": "Mozilla/5.0"})
@@ -103,7 +119,7 @@ cords/rods, arms, tiers, heads, materials and distinctive details.
 Ignore all OCR, printed text, model codes, dimensions, metadata, brand, URL,
 filename and background. Different angle, crop, lighting, room scene or close-up
 is not automatically different. If visibility is insufficient, return unsure.
-Return JSON only: {\"verdict\":\"same_variant|different_variant|unsure\",\"confidence\":0,\"reason\":\"short visual reason\"}"""
+Return JSON only: {\"verdict\":\"same_variant|different_variant|unsure\",\"confidence\":95,\"reason\":\"short visual reason\"}"""
         response = client.chat.completions.create(
             model=os.getenv("QWEN_MODEL", "qwen3.8-flash"),
             temperature=0,
@@ -123,9 +139,12 @@ def classify(dino: float | None, dhash: float | None, qwen: dict | None) -> str:
     if qwen:
         verdict = qwen.get("verdict")
         confidence = float(qwen.get("confidence", 0) or 0)
-        if verdict == "same_variant" and confidence >= 90:
+        if 0.0 < confidence <= 1.0:
+            confidence *= 100.0
+
+        if verdict == "same_variant" and confidence >= 80:
             return "valid"
-        if verdict == "different_variant" and confidence >= 85:
+        if verdict == "different_variant" and confidence >= 80:
             return "invalid"
         if verdict == "error":
             return "error"
@@ -142,9 +161,19 @@ def compare(reference: str, candidate: str) -> dict:
     dino = dino_score(ref_img, cand_img) if getattr(dino_score, "model", None) is not None else None
     qwen = qwen_verify(reference, candidate)
     verdict = classify(dino, dhash, qwen)
+
+    raw_score = qwen.get("confidence") if qwen else (dino * 100 if dino is not None else None)
+    if raw_score is not None:
+        raw_score = float(raw_score)
+        if 0.0 < raw_score <= 1.0:
+            raw_score *= 100.0
+        score = round(raw_score, 1)
+    else:
+        score = None
+
     return {
         "reference": reference, "candidate": candidate, "verdict": verdict,
-        "score": qwen.get("confidence") if qwen else (dino * 100 if dino is not None else None),
+        "score": score,
         "dino_cosine": dino, "dhash_similarity": dhash, "qwen": qwen,
         "evidence_policy": "visual appearance only; text, metadata and background ignored",
     }
