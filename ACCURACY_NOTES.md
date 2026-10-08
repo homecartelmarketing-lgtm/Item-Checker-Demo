@@ -1,31 +1,24 @@
-# Accuracy Upgrade v2
+# Accuracy notes
 
-## Why
-The v1 numbers looked better than reality:
-- Hero photo was compared against itself in most products (free 100% matches).
-- Duplicate gallery rows were checked and counted twice.
-- Andora's answers were in the few-shot prompt (data leakage).
-- The CV pipeline squashed images to squares, which hides rectangular vs round, and approved almost everything.
-- API errors were counted as "mismatch". There was no "Needs Review".
+## v3 (this version)
+- Restored the v2 multi-step pipeline (describe, hard rules, two-way critic, escalation, dedup) that the
+  "visual-only" rewrite had replaced with a single Qwen call. Logic now lives in `pipeline.py`.
+- Prompts moved out of code into `prompts/*.md`. Category rules in `knowledge/rules/*.md` are now actually
+  sent to Qwen (before, nothing loaded them).
+- Rules rewritten to match the visual-only spec: removed the OCR model-suffix rule and the
+  "below 85% = mismatch" rule (low confidence now goes to review), finish is never a hard veto.
+- Removed `knowledge/few_shots/chandelier_mismatches.md` (it described Andora, a product in the batch,
+  so it leaked answers). Few-shots are now real image pairs in `knowledge/few_shots/pairs.json`,
+  automatically skipped for their own product.
+- Images are downloaded once, cached, and sent to Qwen as base64 (alicdn hotlink blocks caused errors).
+- DINOv2 no longer squashes images to a square (letterbox pad instead) and now feeds a soft conflict.
+- Separate thresholds: VALID_CONF 90, INVALID_CONF 85 (was 80/80 hardcoded; .env values were ignored).
+- Swapped-order re-check on borderline answers to catch position bias.
+- Per-pair result cache: re-runs are fast and cheap; tick "Re-check all" in the UI to bypass.
 
-## New flow (qwen_server.py)
-1. **Overrides / duplicates**: operator overrides win. Same image as hero (URL or dHash) is valid with no AI call. Duplicate rows reuse the first result.
-2. **Describe**: Qwen reads each image alone (image type, fixture type, shape, cords, tiers, heads, finish). Cached in `attr_cache.json`.
-3. **Compare in code**: hard rules decide clear mismatches (round vs rectangular, cord count, sconce vs chandelier, single vs multi-head pendant).
-4. **Side-by-side + critic**: holistic compare at temperature 0. Critic runs on matches (catch false passes) and on unsupported mismatches (catch false flags).
-5. **Escalate**: borderline cases go to `QWEN_ESCALATION_MODEL`.
-6. **Verdict**: `valid` / `invalid` / `review` / `error`.
+## v2 background
+- Hero photo was compared against itself (free 100% matches); duplicates counted twice.
+- API errors were counted as mismatch; there was no review state.
 
-`status` is still `match`/`mismatch` so the current UI works. Review and error items show as flagged, with `NEEDS REVIEW:` / `ERROR (retry):` in the reason.
-
-## CV pipeline (auto_checker.py)
-Letterbox resize, raw DINOv2 cosine, RANSAC inliers, background removal on both sides, writes `cv_results.json` (the Qwen server reads it as extra evidence). It no longer overwrites `ai_results.json`.
-
-## Measure before tuning
-1. Copy `labels_template.csv` to `labels.csv` and label 200-300 photos (60+ invalid). Mark 30% as `holdout`.
-2. Run the checker, then: `python eval.py --labels labels.csv --results ai_results.json`
-3. Tune `VALID_CONF`, `INVALID_CONF`, `ATTR_CONF` in `.env` on `dev` only, confirm on `--split holdout`.
-4. Targets: missed bad photos about 0, invalid caught >= 95%, review rate <= 20%.
-
-## Debugging
-Every Qwen request, raw response, parse failure and retry is logged to `logs/verify_debug.jsonl`.
+## Before tuning anything
+No `labels.csv` exists yet, so every threshold is still a guess. Label first, then run `eval.py`.

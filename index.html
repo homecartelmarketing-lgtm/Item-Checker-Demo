@@ -1,357 +1,62 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
-  <title>Akeneo Item Checker | Product Model & Side Images PIM</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link rel="stylesheet" href="style.css?t=1791422000">
+  <title>Item Checker</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="ak-app-container">
-    <!-- Top Akeneo Navigation Bar -->
-    <header class="ak-topbar">
-      <div class="ak-brand">
-        <div class="ak-logo">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="24" height="24" rx="6" fill="#6C5CE7"/>
-            <path d="M7 17L12 7L17 17H14.5L12 11.5L9.5 17H7Z" fill="white"/>
-            <circle cx="12" cy="14" r="1.5" fill="#A29BFE"/>
-          </svg>
-        </div>
-        <div class="ak-brand-text">
-          <span class="ak-brand-title">akeneo</span>
-          <span class="ak-brand-sub">ITEM CHECKER PIM</span>
-        </div>
-      </div>
+  <header class="top">
+    <div class="brand">
+      <h1>Item Checker</h1>
+      <span class="sub">Does each gallery photo show the same product as the hero?</span>
+    </div>
+    <div class="actions">
+      <label class="toggle" title="Ignore cached answers and ask Qwen again">
+        <input type="checkbox" id="fresh"> Re-check all
+      </label>
+      <button id="btnRun" class="primary">Check all photos</button>
+      <button id="btnStop" class="ghost" hidden>Stop</button>
+      <a id="btnExport" class="ghost btn" href="/api/export_csv">Download CSV</a>
+    </div>
+  </header>
 
-      <div class="ak-topbar-search">
-        <i class="fa-solid fa-magnifying-glass"></i>
-        <input type="text" id="productSearchInput" placeholder="Search by product name, SKU, category, or tag...">
-      </div>
+  <div id="notice" class="notice" hidden></div>
 
-      <div class="ak-topbar-actions">
-        <label class="ak-btn ak-btn-secondary" title="Upload a new Shopify/Akeneo CSV">
-          <i class="fa-solid fa-file-csv"></i>
-          <span>Upload CSV</span>
-          <input type="file" id="csvFileInput" accept=".csv" style="display: none;">
-        </label>
-        
-        <button id="batchAiCheckAllBtn" class="ak-btn ak-btn-ai" title="Run Qwen 3.8 Flash Vision on all products">
-          <i class="fa-solid fa-wand-magic-sparkles"></i>
-          <span>AI Check All (Qwen)</span>
-        </button>
+  <div id="progress" class="progress" hidden>
+    <div class="bar"><div id="progressFill" class="fill"></div></div>
+    <span id="progressText"></span>
+  </div>
 
-        <button id="batchExportAllBtn" class="ak-btn ak-btn-primary" title="Export all product images as ZIP">
-          <i class="fa-solid fa-cloud-arrow-down"></i>
-          <span>Batch Export All</span>
-        </button>
+  <nav class="filters">
+    <div id="tabs" class="tabs">
+      <button data-filter="all" class="on">All <b id="c-all">0</b></button>
+      <button data-filter="invalid">Invalid <b id="c-invalid">0</b></button>
+      <button data-filter="review">Review <b id="c-review">0</b></button>
+      <button data-filter="valid">Valid <b id="c-valid">0</b></button>
+      <button data-filter="error">Error <b id="c-error">0</b></button>
+      <button data-filter="unchecked">Not checked <b id="c-unchecked">0</b></button>
+    </div>
+    <input id="search" type="search" placeholder="Search product…">
+  </nav>
 
-        <button id="exportObsidianAuditBtn" class="ak-btn ak-btn-secondary" title="Export Markdown Audit Report to Obsidian Knowledge Base">
-          <i class="fa-solid fa-book-bookmark"></i>
-          <span>Obsidian Report</span>
-        </button>
+  <main id="list"><p class="empty">Loading products…</p></main>
 
-        <button id="themeToggleBtn" class="ak-icon-btn" title="Toggle Light/Dark Theme">
-          <i class="fa-solid fa-moon"></i>
-        </button>
-      </div>
-    </header>
-
-    <!-- Main Workspace: Sidebar + Content -->
-    <div class="ak-body">
-      <!-- Left Sidebar: Product Catalog Navigator -->
-      <aside class="ak-sidebar">
-        <div class="ak-sidebar-header">
-          <div class="ak-sidebar-title">
-            <span>PRODUCTS</span>
-            <span id="productTotalBadge" class="ak-badge ak-badge-neutral">10</span>
-          </div>
-          <div class="ak-sidebar-filter">
-            <button class="ak-filter-tab active" data-filter="all">All</button>
-            <button class="ak-filter-tab" data-filter="flagged">Flagged</button>
-            <button class="ak-filter-tab" data-filter="ready">Ready</button>
-          </div>
-        </div>
-
-        <div class="ak-product-list" id="productList">
-          <!-- Dynamic product items loaded here -->
-        </div>
-
-        <div class="ak-sidebar-footer">
-          <div class="ak-csv-info">
-            <i class="fa-solid fa-database"></i>
-            <span id="activeDatasetLabel">InvalidSideImages.csv</span>
-          </div>
-          <button id="reloadCsvBtn" class="ak-text-btn" title="Reload original CSV">Reset</button>
-        </div>
-      </aside>
-
-      <!-- Main Center Panel: Akeneo Product Detail View -->
-      <main class="ak-main-content">
-        <!-- Breadcrumb & Top Action Toolbar -->
-        <div class="ak-content-header">
-          <div class="ak-breadcrumb">
-            <span>Products</span>
-            <i class="fa-solid fa-chevron-right"></i>
-            <span id="breadcrumbCategory">Lighting Fixtures</span>
-            <i class="fa-solid fa-chevron-right"></i>
-            <strong id="breadcrumbTitle">Loading...</strong>
-          </div>
-
-          <div class="ak-header-buttons">
-            <button id="headerAiAutoCheckBtn" class="ak-btn ak-btn-ai" title="Run 4-Stage AI Auto-Check (rembg + SAM + LightGlue + DINOv2)">
-              <i class="fa-solid fa-wand-magic-sparkles"></i>
-              <span>Auto-Check (AI)</span>
-            </button>
-            <button id="copyAllUrlsBtn" class="ak-btn ak-btn-outline" title="Copy all image URLs for this product">
-              <i class="fa-regular fa-copy"></i>
-              <span>Copy URLs</span>
-            </button>
-            <button id="exportCleanCsvBtn" class="ak-btn ak-btn-outline" title="Export current validation state to CSV">
-              <i class="fa-solid fa-file-arrow-down"></i>
-              <span>Export CSV</span>
-            </button>
-            <button id="downloadProductZipBtn" class="ak-btn ak-btn-accent" title="Download Model Photo + Styled Item Photos as ZIP">
-              <i class="fa-solid fa-file-zipper"></i>
-              <span>Download Product ZIP</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Product Summary Bar -->
-        <section class="ak-product-summary-card">
-          <div class="ak-summary-main">
-            <div class="ak-summary-heading">
-              <h1 id="productTitle">Product Title</h1>
-              <span id="productStatusBadge" class="ak-status-pill">DRAFT</span>
-            </div>
-            
-            <div class="ak-meta-pills">
-              <div class="ak-meta-item">
-                <span class="ak-meta-label">SKU:</span>
-                <span id="productSku" class="ak-meta-value font-mono">-</span>
-              </div>
-              <div class="ak-meta-item">
-                <span class="ak-meta-label">Vendor:</span>
-                <span id="productVendor" class="ak-meta-value">-</span>
-              </div>
-              <div class="ak-meta-item">
-                <span class="ak-meta-label">Category:</span>
-                <span id="productCategory" class="ak-meta-value">-</span>
-              </div>
-              <div class="ak-meta-item" id="productLinksContainer">
-                <!-- External links -->
-              </div>
-            </div>
-          </div>
-
-          <div class="ak-completeness-box">
-            <div class="ak-completeness-info">
-              <span>Completeness</span>
-              <strong id="completenessText">50%</strong>
-            </div>
-            <div class="ak-progress-bar">
-              <div class="ak-progress-fill" id="completenessBar" style="width: 50%;"></div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Akeneo Tabs -->
-        <nav class="ak-nav-tabs">
-          <button class="ak-tab-btn active" data-tab="media">
-            <i class="fa-regular fa-images"></i>
-            <span>Media & Styled Photos</span>
-            <span id="tabMediaCountBadge" class="ak-tab-counter">0</span>
-          </button>
-          <button class="ak-tab-btn" data-tab="specs">
-            <i class="fa-solid fa-sliders"></i>
-            <span>Attributes & Specifications</span>
-          </button>
-          <button class="ak-tab-btn" data-tab="description">
-            <i class="fa-solid fa-align-left"></i>
-            <span>Description</span>
-          </button>
-        </nav>
-
-        <!-- Tab 1: MEDIA VIEW (The Core Requirement) -->
-        <div class="ak-tab-pane active" id="tabPaneMedia">
-          
-          <!-- ROW 1: MODEL PHOTO (HERO STYLED PHOTO) -->
-          <div class="ak-section-block">
-            <div class="ak-section-title-bar">
-              <div class="ak-title-group">
-                <span class="ak-section-number">ROW 1</span>
-                <h2>Model Photo (Primary Styled Photo)</h2>
-                <span class="ak-badge ak-badge-primary">Hero Image &bull; Position #1</span>
-              </div>
-              <div class="ak-section-tools">
-                <button id="downloadModelPhotoBtn" class="ak-small-btn" title="Download only the model photo">
-                  <i class="fa-solid fa-download"></i> Download Model Photo
-                </button>
-                <button id="copyModelUrlBtn" class="ak-small-btn" title="Copy model photo URL">
-                  <i class="fa-regular fa-copy"></i> Copy URL
-                </button>
-              </div>
-            </div>
-
-            <div class="ak-model-photo-card">
-              <div class="ak-model-photo-stage">
-                <div class="ak-img-container" id="modelPhotoContainer">
-                  <div class="ak-loading-placeholder">Loading Model Photo...</div>
-                </div>
-                <div class="ak-image-badge-overlay">
-                  <i class="fa-solid fa-star"></i> Primary Model Photo
-                </div>
-              </div>
-
-              <div class="ak-model-details-sidebar">
-                <h3>Model Image Metadata</h3>
-                <div class="ak-kv-list" id="modelMetaList">
-                  <!-- Model photo stats (Position, Variant Image, CDN, Dimensions) -->
-                </div>
-
-                <div class="ak-quick-specs">
-                  <h4>Quick Specifications</h4>
-                  <div class="ak-spec-grid" id="quickSpecsGrid">
-                    <!-- Quick Specs loaded from CSV -->
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- ROW 2+: STYLED PHOTO CONTENTS & ITEM SIDE PHOTOS -->
-          <div class="ak-section-block">
-            <div class="ak-section-title-bar">
-              <div class="ak-title-group">
-                <span class="ak-section-number">ROW 2+</span>
-                <h2>Styled Photo Contents & Item Side Photos</h2>
-                <span id="sideImagesCountBadge" class="ak-badge ak-badge-neutral">0 Photos</span>
-              </div>
-
-              <!-- Multi-action controls -->
-              <div class="ak-gallery-actions">
-                <button id="runAiAutoCheckBtn" class="ak-small-btn ak-btn-ai" title="Run Qwen 3.8 Flash Vision AI to verify this product's side photos">
-                  <i class="fa-solid fa-wand-magic-sparkles"></i> AI Check Photos
-                </button>
-
-                <div class="ak-checkbox-group">
-                  <input type="checkbox" id="selectAllSideImgsCheckbox">
-                  <label for="selectAllSideImgsCheckbox">Select All</label>
-                </div>
-                
-                <button id="markSelectedValidBtn" class="ak-small-btn ak-btn-success" title="Mark selected images as valid">
-                  <i class="fa-solid fa-check"></i> Mark Valid
-                </button>
-
-                <button id="markSelectedInvalidBtn" class="ak-small-btn ak-btn-danger" title="Flag selected images as invalid side images">
-                  <i class="fa-solid fa-triangle-exclamation"></i> Mark Invalid
-                </button>
-
-                <button id="downloadSelectedZipBtn" class="ak-small-btn ak-btn-accent" title="Download selected images in a ZIP">
-                  <i class="fa-solid fa-file-zipper"></i> Download Selected (<span id="selectedCountSpan">0</span>)
-                </button>
-              </div>
-            </div>
-
-            <p class="ak-section-desc">
-              These are the individual detail shots, side angles, and styled contents belonging to this product. Inspect each photo below to verify validity or flag improper side shots.
-            </p>
-
-            <!-- Grid of side images -->
-            <div class="ak-side-images-grid" id="sideImagesGrid">
-              <!-- Cards dynamically inserted -->
-            </div>
-          </div>
-
-        </div>
-
-        <!-- Tab 2: SPECIFICATIONS VIEW -->
-        <div class="ak-tab-pane" id="tabPaneSpecs">
-          <div class="ak-section-block">
-            <div class="ak-section-title-bar">
-              <h2>Product Specifications & Akeneo Attributes</h2>
-            </div>
-            <div class="ak-specs-table-wrapper" id="fullSpecsContainer">
-              <!-- Full attributes table -->
-            </div>
-          </div>
-        </div>
-
-        <!-- Tab 3: DESCRIPTION VIEW -->
-        <div class="ak-tab-pane" id="tabPaneDesc">
-          <div class="ak-section-block">
-            <div class="ak-section-title-bar">
-              <h2>Product Descriptions</h2>
-            </div>
-            <div class="ak-description-wrapper">
-              <div class="ak-desc-card">
-                <h3>Formatted HTML Description</h3>
-                <div class="ak-html-preview" id="bodyHtmlPreview"></div>
-              </div>
-              <div class="ak-desc-card">
-                <h3>Variant Description</h3>
-                <pre class="ak-raw-text" id="variantDescPreview"></pre>
-              </div>
-            </div>
-          </div>
-        </div>
-
-      </main>
+  <div id="viewer" class="viewer" hidden>
+    <div class="pair">
+      <figure><img id="vHero" alt=""><figcaption>Hero</figcaption></figure>
+      <figure><img id="vCand" alt=""><figcaption id="vCap">Photo</figcaption></figure>
+    </div>
+    <p id="vReason" class="vreason"></p>
+    <div class="vops">
+      <button id="vValid" class="ok">✓ Valid</button>
+      <button id="vInvalid" class="bad">✗ Invalid</button>
+      <button id="vClose" class="ghost">Close (Esc)</button>
     </div>
   </div>
 
-  <!-- Fullscreen High-Res Image Inspection Modal -->
-  <div class="ak-modal-overlay" id="imageModal">
-    <div class="ak-modal-dialog">
-      <div class="ak-modal-header">
-        <div class="ak-modal-title">
-          <span id="modalImgTag" class="ak-badge ak-badge-primary">Model Photo</span>
-          <strong id="modalImgTitle">Product Image Preview</strong>
-          <span id="modalImgIndex" class="ak-badge ak-badge-neutral">1 / 1</span>
-        </div>
-        <div class="ak-modal-controls">
-          <button id="modalPrevBtn" class="ak-icon-btn" title="Previous Image (Left Arrow)"><i class="fa-solid fa-arrow-left"></i></button>
-          <button id="modalNextBtn" class="ak-icon-btn" title="Next Image (Right Arrow)"><i class="fa-solid fa-arrow-right"></i></button>
-          <button id="modalDownloadBtn" class="ak-icon-btn" title="Download Image"><i class="fa-solid fa-download"></i></button>
-          <button id="modalCopyUrlBtn" class="ak-icon-btn" title="Copy URL"><i class="fa-regular fa-copy"></i></button>
-          <button id="modalCloseBtn" class="ak-icon-btn" title="Close Preview (Esc)"><i class="fa-solid fa-xmark"></i></button>
-        </div>
-      </div>
-      <div class="ak-modal-body">
-        <img id="modalImgElem" src="" alt="High resolution preview">
-      </div>
-      <div class="ak-modal-footer">
-        <div class="ak-modal-url" id="modalImgUrlText">URL</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Download Progress Toast / Modal -->
-  <div class="ak-toast-modal" id="progressToast">
-    <div class="ak-toast-content">
-      <div class="ak-spinner" id="toastSpinner"></div>
-      <div class="ak-toast-text">
-        <strong id="toastTitle">Preparing Download...</strong>
-        <span id="toastSubtitle">Fetching images from CDN...</span>
-      </div>
-    </div>
-    <div class="ak-toast-progress-bar">
-      <div class="ak-toast-progress-fill" id="toastProgressFill" style="width: 0%;"></div>
-    </div>
-  </div>
-
-  <!-- Scripts -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
-  <script src="data.js?t=1791422000"></script>
-  <script src="app.js?t=1791429000"></script>
-  <script src="dashboard_reset.js?t=1791429000"></script>
+  <script src="app.js"></script>
 </body>
 </html>

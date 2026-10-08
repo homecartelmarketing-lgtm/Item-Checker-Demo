@@ -1,24 +1,55 @@
-# Item Checker Demo | Akeneo PIM Product Photo Verification
+# Item Checker
 
-An AI-powered quality control and audit platform for checking whether gallery photos show the same physical product as the hero photo.
+Checks whether each gallery photo shows the **same physical product variant** as the hero photo
+(Image Position 1). Built for Akeneo / Shopify lighting catalogs where supplier galleries mix
+round, rectangular, sconce and other variants.
 
-## Current visual-only flow
-
-The dashboard flow is: **duplicate check → proportion-safe preprocessing → DINOv2 visual similarity → Qwen image-to-image verification → valid / invalid / review / error**.
-
-On a fresh page load, gallery photos must display **Not checked** until the user runs **AI Check Photos**. Old `ai_results.json` verdicts must not be presented as fresh results. The UI keeps one gallery-level verification action instead of duplicate batch and header check buttons; manual review and export controls remain available.
-
-The matcher compares only visible product appearance: silhouette, proportions, geometry, cords/rods, arms, tiers, heads, finish, material and distinctive physical details. It must not use OCR, printed model codes, dimensions, titles, filenames, URLs, catalog metadata or background similarity as match evidence.
-
-## Run locally
+## Run
 
 ```bash
-pip install pillow ImageHash openai
-python qwen_server.py
+pip install -r requirements.txt
+cp .env.example .env        # add DASHSCOPE_API_KEY
+python qwen_server.py       # or double-click run.bat on Windows
 ```
 
-Open `http://localhost:8089`. Set `DASHSCOPE_API_KEY` in `.env` for Qwen verification. DINOv2 is optional. Borderline results stay `review`; API failures stay `error`, never `invalid`.
+Open http://localhost:8089, press **Check all photos**, then work the **Invalid** and **Review** tabs.
+Click any photo to see it next to the hero and mark it ✓ Valid / ✗ Invalid (keys `v` / `x`).
+Your decisions are saved and always win over the AI. **Download CSV** exports the verdicts.
 
-## UI bootstrap
+## How a photo is checked (`pipeline.py`)
 
-Include `dashboard_reset.js` after `app.js` in `index.html` while validating the new flow. It removes stale verdict badges on load, changes cards to **Not checked**, and removes duplicate verification buttons. Once the behavior is confirmed, move the reset into the main render state and remove the bootstrap script.
+1. Operator decision wins.
+2. Same image as hero (URL or dHash) is valid without an AI call. Gallery duplicates reuse the first result.
+3. Qwen describes each image alone (shape, cords, tiers, heads, fixture type). Cached.
+4. Hard rules in code catch clear mismatches: round vs rectangular, cord count, tiers, single vs multi-head, sconce vs ceiling light.
+5. Qwen compares hero and photo side by side. Optional image-pair few-shots.
+6. A critic double-checks: tries to veto matches, and tries to defend unsupported mismatches.
+7. Borderline answers are re-asked with the images swapped, then escalated to a stronger model.
+8. Result: `valid` / `invalid` / `review` / `error`. Errors are never counted as invalid.
+
+Only visible appearance is used. Text, model codes, dimensions, titles, URLs and backgrounds are ignored.
+
+## Changing how Qwen thinks
+
+Edit the Markdown in `prompts/` and `knowledge/rules/`. These files are sent to Qwen on every run,
+see `prompts/README.md`. Then measure (below). Don't add a rule without a labelled example that needs it.
+
+## Measure accuracy
+
+1. Copy `labels_template.csv` to `labels.csv`, label 200-300 photos (60+ invalid), mark 30% `holdout`.
+2. `python eval.py --labels labels.csv --results ai_results.json`
+3. Tune thresholds in `.env` on `dev`, confirm once on `--split holdout`.
+
+Targets: missed bad photos about 0, invalid caught at least 95%, review rate at most 20%.
+
+## Files
+
+| File | Purpose |
+| --- | --- |
+| `qwen_server.py` | Web server + streaming API |
+| `pipeline.py` | All checking logic (also a CLI) |
+| `visual_only_matcher.py` | Image download/cache, letterbox resize, dHash, optional DINOv2 |
+| `prompts/`, `knowledge/rules/` | Text sent to Qwen |
+| `knowledge/feedback/overrides.json` | Operator decisions |
+| `ai_results.json`, `InvalidSideImages_Verified.csv` | Output |
+| `logs/verify_debug.jsonl` | Every Qwen request/response for debugging |
