@@ -1,6 +1,17 @@
 # Accuracy notes
 
-## v3 (this version)
+## v3.1
+- Flash only by default: `ENABLE_ESCALATION=0`, no default escalation model.
+- `make_labels.py` builds `labels.csv` from the gallery CSV + operator clicks (stable dev/holdout split).
+- Caches are keyed on settings and prompt/rule/few-shot text. Editing a prompt or a threshold no longer
+  returns stale answers. First run after upgrading is a full (uncached) run.
+- `MAX_SIDE` configurable (default 1024, unchanged).
+- `ZOOM_CROPS=1` (off by default) sends a top band (canopy + cords) and a middle band (arms + tiers) of both
+  photos to describe and compare. Fixture box from FastSAM when `ultralytics` is installed, otherwise a
+  white-background box; room scenes without FastSAM fall back to whole-image bands. Critic is unchanged.
+- Every result now carries `settings` (max_side, zoom_crops, sig) and the debug log records images per call.
+
+## v3
 - Restored the v2 multi-step pipeline (describe, hard rules, two-way critic, escalation, dedup) that the
   "visual-only" rewrite had replaced with a single Qwen call. Logic now lives in `pipeline.py`.
 - Prompts moved out of code into `prompts/*.md`. Category rules in `knowledge/rules/*.md` are now actually
@@ -21,4 +32,5 @@
 - API errors were counted as mismatch; there was no review state.
 
 ## Before tuning anything
-No `labels.csv` exists yet, so every threshold is still a guess. Label first, then run `eval.py`.
+No `labels.csv` exists yet, so every threshold is still a guess. Run `python make_labels.py`, label,
+then run `eval.py`.

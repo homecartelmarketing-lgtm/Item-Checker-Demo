@@ -4,6 +4,8 @@
 - contain() / pad_square(): resize WITHOUT stretching the product
 - dhash_similarity(): near-duplicate detection
 - dino_cosine(): optional DINOv2 similarity (only if torch is installed)
+- fixture_box() / zoom_crops(): optional zoomed views of canopy+cords and arms+tiers
+  (FastSAM-s.pt if ultralytics is installed, else a plain white-background box)
 - to_data_url(): send the already-downloaded image to Qwen as base64,
   so supplier CDNs that block hotlinking do not cause random errors.
 
@@ -71,7 +73,7 @@ def fetch_image(url: str, timeout: int = 30, retries: int = 3) -> Image.Image:
 
 
 def contain(img: Image.Image, size: int = 1024) -> Image.Image:
-    """Shrink to fit inside size x size, keeping proportions."""
+    """Fit inside size x size, keeping proportions (small crops are scaled up)."""
     return ImageOps.contain(img, (size, size), method=Image.Resampling.LANCZOS)
 
 
@@ -90,6 +92,90 @@ def dhash_similarity(a: Image.Image, b: Image.Image) -> tuple[float, int]:
     """(similarity 0..1, hamming distance 0..64)."""
     dist = hamming(dhash_pil(pad_square(a, 256)), dhash_pil(pad_square(b, 256)))
     return round(1.0 - dist / 64.0, 4), dist
+
+
+# ---------------- optional zoom crops ----------------
+_SAM = {"model": None, "tried": False}
+_SAM_LOCK = threading.Lock()
+
+
+def _fastsam():
+    """FastSAM-s.pt via ultralytics, loaded once. None if not installed or disabled."""
+    if _SAM["tried"]:
+        return _SAM["model"]
+    _SAM["tried"] = True
+    if os.getenv("ENABLE_FASTSAM", "1") != "1":
+        return None
+    path = os.path.join(BASE_DIR, os.getenv("FASTSAM_MODEL", "FastSAM-s.pt"))
+    try:
+        from ultralytics import FastSAM
+        _SAM["model"] = FastSAM(path)
+    except Exception as exc:
+        print(f"[fastsam] disabled, using white-background box: {exc}", file=sys.stderr)
+        _SAM["model"] = None
+    return _SAM["model"]
+
+
+def _sam_box(img: Image.Image):
+    """Best guess at the hanging fixture: a big segment that starts high in the frame."""
+    model = _fastsam()
+    if model is None:
+        return None
+    try:
+        with _SAM_LOCK:
+            res = model(img, device="cpu", imgsz=640, conf=0.4, iou=0.9, retina_masks=False, verbose=False)
+        boxes = res[0].boxes.xyxy.cpu().numpy().tolist() if res and res[0].boxes is not None else []
+    except Exception as exc:
+        print(f"[fastsam] failed: {exc}", file=sys.stderr)
+        return None
+    W, H = img.size
+    best, best_score = None, 0.0
+    for x1, y1, x2, y2 in boxes:
+        area = max(0.0, x2 - x1) * max(0.0, y2 - y1) / float(W * H)
+        cx = (x1 + x2) / 2.0
+        if not (0.03 <= area <= 0.70) or not (0.1 * W <= cx <= 0.9 * W) or y1 > 0.6 * H:
+            continue
+        score = area * (1.0 - y1 / H)      # prefer large segments near the ceiling
+        if score > best_score:
+            best, best_score = (int(x1), int(y1), int(x2), int(y2)), score
+    return best
+
+
+def _plain_bg_box(img: Image.Image, thresh: int = 235):
+    """Product cutouts on white: box of the non-white pixels. None for room scenes."""
+    mask = img.convert("L").point(lambda p: 255 if p < thresh else 0)
+    box = mask.getbbox()
+    if not box:
+        return None
+    W, H = img.size
+    frac = (box[2] - box[0]) * (box[3] - box[1]) / float(W * H)
+    return box if 0.02 <= frac <= 0.97 else None
+
+
+def fixture_box(img: Image.Image):
+    """(x1, y1, x2, y2) of the fixture, or the whole image when nothing reliable is found."""
+    return _sam_box(img) or _plain_bg_box(img) or (0, 0, img.size[0], img.size[1])
+
+
+def zoom_crops(img: Image.Image, min_px: int = 64):
+    """[(label, crop)] for the top band (canopy + cords) and the middle band (arms + tiers).
+
+    Thin cords are often outside the segmentation mask, so the top band always runs
+    from the top of the photo down into the fixture body.
+    """
+    W, H = img.size
+    x1, y1, x2, y2 = fixture_box(img)
+    bw, bh = x2 - x1, y2 - y1
+    xa, xb = max(0, int(x1 - 0.08 * bw)), min(W, int(x2 + 0.08 * bw))
+    bands = [
+        ("top band (canopy and suspension cords)", (xa, 0, xb, min(H, int(y1 + 0.35 * bh)))),
+        ("middle band (arms and tiers)", (xa, max(0, int(y1 + 0.2 * bh)), xb, min(H, int(y1 + 0.8 * bh)))),
+    ]
+    out = []
+    for label, (a, b, c, d) in bands:
+        if c - a >= min_px and d - b >= min_px:
+            out.append((label, img.crop((a, b, c, d))))
+    return out
 
 
 # ---------------- optional DINOv2 ----------------

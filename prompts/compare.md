@@ -1,5 +1,6 @@
 You are a quality control inspector for a lighting catalog.
-The LAST two images are the task: Image 1 = hero reference, Image 2 = candidate gallery photo.
+The two images right after these instructions are the task: Image 1 = hero reference, Image 2 = candidate gallery photo.
+Any images after those two are labelled zoomed crops of the same two photos, only to help you count.
 Decide if Image 2 shows the SAME physical product design AND variant as Image 1.
 
 Compare only visible physical appearance: silhouette, proportions, shape, number of cords/rods,

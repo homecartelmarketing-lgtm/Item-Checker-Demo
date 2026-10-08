@@ -1,15 +1,19 @@
-"""Item Checker pipeline v3: does a gallery photo show the same product variant as the hero?
+"""Item Checker pipeline v3.1: does a gallery photo show the same product variant as the hero?
 
 Flow per photo (visual evidence only, see VISUAL_MATCHING_SPEC.md):
   0. operator override wins
   1. same image as hero (URL or dHash)        -> valid, no AI call
   2. duplicate inside the gallery              -> reuse first result
-  3. Qwen "describe" each image alone          -> attributes (cached per image)
+  3. Qwen "describe" each image alone          -> attributes (cached per image + settings)
   4. hard rules in code                        -> shape / cords / tiers / heads / fixture type
   5. Qwen side-by-side compare (+ few-shots)   -> same_variant / different_variant / unsure
   6. critic: veto on matches, defend on unsupported mismatches
-  7. borderline: swapped-order re-check, then escalation model
+  7. borderline: swapped-order re-check (escalation model only if explicitly enabled)
   8. verdict: valid / invalid / review / error  (errors are never invalid)
+
+v3.1: flash only by default, MAX_SIDE configurable, optional ZOOM_CROPS (canopy+cords and
+arms+tiers sent as extra images), caches keyed on settings + prompt text so edits never
+return stale answers.
 
 Prompts live in prompts/*.md and knowledge/rules/*.md and are reloaded on every run.
 
@@ -19,6 +23,8 @@ CLI:
 from __future__ import annotations
 
 import argparse
+import glob
+import hashlib
 import json
 import os
 import re
@@ -30,7 +36,7 @@ import visual_only_matcher as vm
 from checker_utils import load_json, normalize_url, save_json
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PIPELINE_VERSION = "v3.0"
+PIPELINE_VERSION = "v3.1"
 
 
 # ---------------- config ----------------
@@ -63,8 +69,9 @@ def _b(name, default):
 API_KEY = os.environ.get("DASHSCOPE_API_KEY", "")
 BASE_URL = os.environ.get("DASHSCOPE_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1")
 QWEN_MODEL = os.environ.get("QWEN_MODEL", "qwen3.8-flash")
-ESCALATION_MODEL = os.environ.get("QWEN_ESCALATION_MODEL", "qwen-vl-max")
-ENABLE_ESCALATION = _b("ENABLE_ESCALATION", "1")
+# Flash only by default (see ACCURACY_PLAN.md). Set both to opt back in to a second model.
+ESCALATION_MODEL = os.environ.get("QWEN_ESCALATION_MODEL", "")
+ENABLE_ESCALATION = _b("ENABLE_ESCALATION", "0")
 ENABLE_SWAP_CHECK = _b("ENABLE_SWAP_CHECK", "1")
 SWAP_BELOW = _f("SWAP_BELOW", 95)          # re-check with images swapped when confidence is below this
 VALID_CONF = _f("VALID_CONF", 90)          # auto-pass needs this much (missed bad photos are the costly error)
@@ -75,6 +82,8 @@ DINO_LOW = _f("DINO_LOW", 0.35)            # below this DINO cosine adds a soft 
 CLOSEUP_POLICY = os.environ.get("CLOSEUP_POLICY", "valid_if_consistent")  # or "review"
 FEWSHOT_MAX = int(_f("FEWSHOT_MAX", 2))
 API_RETRIES = int(_f("API_RETRIES", 3))
+MAX_SIDE = int(_f("MAX_SIDE", 1024))       # longest side of every image sent to Qwen
+ZOOM_CROPS = _b("ZOOM_CROPS", "0")         # also send canopy+cords and arms+tiers crops
 
 PROMPTS_DIR = os.path.join(BASE_DIR, "prompts")
 RULES_DIR = os.path.join(BASE_DIR, "knowledge", "rules")
@@ -149,6 +158,25 @@ def fewshots_for(category, handle):
     return picked[:FEWSHOT_MAX]
 
 
+# ---------------- cache signatures ----------------
+def _hash(*parts):
+    return hashlib.sha1("\x1f".join(str(p) for p in parts).encode("utf-8")).hexdigest()[:12]
+
+
+def _describe_sig():
+    """Anything that changes a describe answer: model, image size, crops, describe prompt."""
+    return _hash(PIPELINE_VERSION, QWEN_MODEL, MAX_SIDE, ZOOM_CROPS, _read(os.path.join(PROMPTS_DIR, "describe.md")))
+
+
+def _pair_sig():
+    """Anything that changes a final verdict: settings, thresholds, every prompt, rule and few-shot."""
+    files = sorted(glob.glob(os.path.join(PROMPTS_DIR, "*.md")) + glob.glob(os.path.join(RULES_DIR, "*.md")))
+    texts = [_read(p) for p in files] + [_read(FEWSHOT_FILE)]
+    return _hash(PIPELINE_VERSION, QWEN_MODEL, ESCALATION_MODEL if ENABLE_ESCALATION else "", MAX_SIDE, ZOOM_CROPS,
+                 VALID_CONF, INVALID_CONF, ATTR_CONF, SWAP_BELOW, ENABLE_SWAP_CHECK, DHASH_MAX_DIST, DINO_LOW,
+                 CLOSEUP_POLICY, FEWSHOT_MAX, *texts)
+
+
 # ---------------- Qwen ----------------
 _CLIENT = None
 
@@ -180,6 +208,7 @@ def call_qwen(content, tag, model=None):
         raise QwenError("DASHSCOPE_API_KEY is not set")
     model = model or QWEN_MODEL
     last = None
+    n_images = sum(1 for c in content if c.get("type") == "image_url")
     for attempt in range(1, API_RETRIES + 1):
         raw = None
         try:
@@ -189,22 +218,53 @@ def call_qwen(content, tag, model=None):
             )
             raw = resp.choices[0].message.content
             out = _parse_json(raw)
-            debug_log("qwen_ok", tag=tag, model=model, attempt=attempt, raw=raw)
+            debug_log("qwen_ok", tag=tag, model=model, attempt=attempt, images=n_images, raw=raw)
             return out
         except Exception as exc:
             last = exc
-            debug_log("qwen_error", tag=tag, model=model, attempt=attempt, error=f"{type(exc).__name__}: {exc}", raw=raw)
+            debug_log("qwen_error", tag=tag, model=model, attempt=attempt, images=n_images,
+                      error=f"{type(exc).__name__}: {exc}", raw=raw)
             if attempt < API_RETRIES:
                 time.sleep(min(8, 1.5 * 2 ** (attempt - 1)))
     raise QwenError(f"{type(last).__name__}: {last}")
 
 
+def _pil(img):
+    return {"type": "image_url", "image_url": {"url": vm.to_data_url(img, MAX_SIDE)}}
+
+
 def _img(url):
-    return {"type": "image_url", "image_url": {"url": vm.to_data_url(vm.fetch_image(url))}}
+    return _pil(vm.fetch_image(url))
 
 
 def _txt(text):
     return {"type": "text", "text": text}
+
+
+_CROPS = {}
+
+
+def _zoom(url, label):
+    """Extra labelled zoom crops of one photo (empty list when ZOOM_CROPS is off or fails)."""
+    if not ZOOM_CROPS:
+        return []
+    key = normalize_url(url)
+    try:
+        if key not in _CROPS:
+            crops = vm.zoom_crops(vm.fetch_image(url))
+            with _LOCK:
+                _CROPS[key] = crops
+        parts = []
+        for name, crop in _CROPS[key]:
+            parts += [_txt(f"{label}, zoomed {name}:"), _pil(crop)]
+        return parts
+    except Exception as exc:
+        debug_log("zoom_failed", url=url, error=f"{type(exc).__name__}: {exc}")
+        return []
+
+
+ZOOM_NOTE = ("Zoomed crops of the SAME photo(s) follow. They are not other products. "
+             "Use them only to count cords, rods, arms, tiers and heads.")
 
 
 def _num(v, default=None):
@@ -246,15 +306,19 @@ def _pair_cache():
 
 
 def _pair_key(hero, cand):
-    return f"{PIPELINE_VERSION}|{QWEN_MODEL}|{normalize_url(hero)}|{normalize_url(cand)}"
+    return f"{_pair_sig()}|{normalize_url(hero)}|{normalize_url(cand)}"
 
 
 def describe(url):
-    key = normalize_url(url)
+    key = f"{_describe_sig()}|{normalize_url(url)}"
     cache = _attr_cache()
     if key in cache:
         return cache[key]
-    attrs = call_qwen([_txt(prompt("describe")), _img(url)], tag="describe")
+    content = [_txt(prompt("describe")), _img(url)]
+    zoom = _zoom(url, "Same image")
+    if zoom:
+        content += [_txt(ZOOM_NOTE)] + zoom
+    attrs = call_qwen(content, tag="describe")
     with _LOCK:
         cache[key] = attrs
         save_json(ATTR_CACHE_FILE, cache)
@@ -334,6 +398,9 @@ def compare(hero_url, cand_url, hero_attrs, cand_attrs, category, handle, notes=
     content += [_txt(prompt("compare", rules=rules_for(category), hero_attrs=attr_summary(a1),
                             cand_attrs=attr_summary(a2), operator_notes=notes)),
                 _img(first), _img(second)]
+    zoom = _zoom(first, "Image 1") + _zoom(second, "Image 2")
+    if zoom:
+        content += [_txt(ZOOM_NOTE)] + zoom
     res = call_qwen(content, tag="compare_swap" if swap else "compare", model=model)
     v = str(res.get("verdict", "")).strip().lower()
     res["verdict"] = v if v in ("same_variant", "different_variant", "unsure") else "unsure"
@@ -500,6 +567,7 @@ def check_pair(hero_url, cand_url, pos="extra", category="general", handle="", h
         evidence={"dhash_similarity": sim, "dino_cosine": dino},
         attributes={"hero": hero_attrs, "candidate": cand_attrs},
         engine=f"{PIPELINE_VERSION}:{QWEN_MODEL}",
+        settings={"max_side": MAX_SIDE, "zoom_crops": ZOOM_CROPS, "sig": _pair_sig()},
     )
     with _LOCK:
         _pair_cache()[key] = res

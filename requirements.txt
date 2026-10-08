@@ -3,3 +3,5 @@ openai>=1.40
 # optional, only for DINOv2 visual similarity:
 # torch
 # torchvision
+# optional, only for ZOOM_CROPS fixture box with FastSAM-s.pt:
+# ultralytics
