@@ -18,3 +18,9 @@ desktop.ini
 *.log
 temp/
 tmp/
+
+# Item Checker runtime artifacts
+logs/
+attr_cache.json
+*.tmp
+eval_errors.csv

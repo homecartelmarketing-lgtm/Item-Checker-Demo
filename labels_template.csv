@@ -1,0 +1,5 @@
+handle,url,label,category,image_type,mismatch_reason,split
+Andora | Chandelier,https://img.alicdn.com/bao/uploaded/i2/1732754654/O1CN01P1tuiw416rF1WPjS_!!4611686018427387102-0-item_pic.jpg,invalid,chandelier,lifestyle_room,shape,dev
+Andora | Chandelier,https://img.alicdn.com/bao/uploaded/i4/1732754654/O1CN01eYrxbR1kFaHwSZ1ct_!!1732754654.jpg,invalid,chandelier,lifestyle_room,shape,dev
+Andora | Chandelier,https://img.alicdn.com/bao/uploaded/i4/1732754654/O1CN01dMxcrW1kFaHtKlY7F_!!1732754654.jpg,valid,chandelier,lifestyle_room,,dev
+Andora | Chandelier,https://img.alicdn.com/imgextra/i2/1732754654/O1CN016g3v421kFaJZVW00V_!!1732754654.jpg,valid,chandelier,detail_closeup,,dev
