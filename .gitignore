@@ -19,5 +19,7 @@ tmp/
 
 logs/
 attr_cache.json
+pair_cache.json
+cache_images/*.img
 *.tmp
 eval_errors.csv

@@ -1,0 +1,10 @@
+[
+  {
+    "category": "chandelier",
+    "handle": "Some Other Product | Chandelier",
+    "hero_url": "https://example.com/hero.jpg",
+    "candidate_url": "https://example.com/round-variant.jpg",
+    "verdict": "different_variant",
+    "reason": "Hero is a long rectangular fixture on two cords; candidate is round on one central rod."
+  }
+]
