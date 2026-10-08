@@ -1,0 +1,14 @@
+{
+  "description": "Operator Manual Feedback & Correction Overrides",
+  "updated_at": "2026-10-08 09:32:22",
+  "overrides": {
+    "Andora | Chandelier::test_url": {
+      "handle": "Andora | Chandelier",
+      "url": "test_url",
+      "position": "5",
+      "is_valid": false,
+      "note": "Round Chandelier Mismatch",
+      "timestamp": "2026-10-08 09:32:22"
+    }
+  }
+}
